@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@1001-digital/erc721-extensions/contracts/LinearlyAssigned.sol";
+import "@1001-digital/erc721-extensions/contracts/WithMarketOffers.sol";
 import "@1001-digital/erc721-extensions/contracts/WithContractMetaData.sol";
 import "@1001-digital/erc721-extensions/contracts/WithIPFSMetaData.sol";
 import "@1001-digital/erc721-extensions/contracts/WithWithdrawals.sol";
@@ -23,6 +24,7 @@ contract EtherPapes is
     WithIPFSMetaData,
     LinearlyAssigned,
     WithContractMetaData,
+    WithMarketOffers,
     WithWithdrawals
 {
     uint256 public BASE_PRICE = 0.001 ether;

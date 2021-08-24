@@ -1,6 +1,6 @@
 const { parseUnits } = require('ethers/lib/utils')
 const { expect } = require('chai')
-const { ethers, waffle } = require('hardhat')
+const { ethers } = require('hardhat')
 
 const getPrice = id => parseUnits('0.001', 'ether').mul(id ** 2)
 
@@ -44,50 +44,89 @@ describe('EtherPapes Contract', async () => {
   })
 
   describe('Claiming Phase', () => {
-    describe('Claim', () => {
-      it('Wallets should be able to claim a paper', async () => {
-        const transaction = await contract.connect(buyer1).claim({ value: getPrice(1) })
-        const receipt = await transaction.wait()
-        tokenId = receipt.events?.find(e => e.event === 'Transfer').args.tokenId
+    it('Wallets should be able to claim a paper', async () => {
+      const transaction = await contract.connect(buyer1).claim({ value: getPrice(1) })
+      const receipt = await transaction.wait()
+      tokenId = receipt.events?.find(e => e.event === 'Transfer').args.tokenId
 
-        expect(await contract.ownerOf(tokenId)).to.equal(buyer1.address)
+      expect(await contract.ownerOf(tokenId)).to.equal(buyer1.address)
 
-        // Others can claim too
-        await expect(contract.connect(buyer2).claim({ value: getPrice(2) }))
-                    .to.emit(contract, 'Transfer')
-      })
+      // Others can claim too
+      await expect(contract.connect(buyer2).claim({ value: getPrice(2) }))
+                  .to.emit(contract, 'Transfer')
+    })
 
-      it('Updates the sold count', async () => {
-        expect(await contract.tokenCount()).to.equal(0)
+    it('Updates the sold count', async () => {
+      expect(await contract.tokenCount()).to.equal(0)
 
-        await contract.connect(buyer1).claim({ value: getPrice(1) })
-        expect(await contract.tokenCount()).to.equal(1)
+      await contract.connect(buyer1).claim({ value: getPrice(1) })
+      expect(await contract.tokenCount()).to.equal(1)
 
-        await contract.connect(buyer2).claim({ value: getPrice(2) })
-        expect(await contract.tokenCount()).to.equal(2)
-      })
+      await contract.connect(buyer2).claim({ value: getPrice(2) })
+      expect(await contract.tokenCount()).to.equal(2)
+    })
 
-      it('Sells 100, then fails on further tries', async () => {
-        let sold = 0
+    it('Sells 100, then fails on further tries', async () => {
+      let sold = 0
 
-        console.log(`         Started selling`)
-        while (sold < 100) {
-          await contract.connect(buyer1).claim({ value: getPrice(sold + 1) })
-          sold ++
-          if (sold % 10 === 0) {
-            console.log(`          === ${sold} SOLD ===`)
-            expect(await contract.tokenCount()).to.equal(sold)
-          }
+      console.log(`         Started selling`)
+      while (sold < 100) {
+        await contract.connect(buyer1).claim({ value: getPrice(sold + 1) })
+        sold ++
+        if (sold % 10 === 0) {
+          console.log(`          === ${sold} SOLD ===`)
+          expect(await contract.tokenCount()).to.equal(sold)
         }
+      }
 
-        expect(await contract.tokenCount()).to.equal(100)
+      expect(await contract.tokenCount()).to.equal(100)
 
-        await expect(contract.connect(buyer1).claim({ value: getPrice(101) }))
-                    .to.be.revertedWith('No more tokens available')
-      })
+      await expect(contract.connect(buyer1).claim({ value: getPrice(101) }))
+                  .to.be.revertedWith('No more tokens available')
     })
   })
 
+  describe('Market', () => {
+    const price = ethers.utils.parseEther('2')
+
+    beforeEach(async () => {
+      await contract.connect(buyer1).claim({ value: getPrice(1) })
+    })
+
+    it('Should allow the owner of a token to add a new offer', async () => {
+      await expect(contract.offerFor(1))
+        .to.be.revertedWith('No active offer for this item')
+
+      expect(await contract.connect(buyer1).makeOffer(1, price))
+        .to.emit(contract, 'OfferCreated')
+        .withArgs(1, price, ethers.constants.AddressZero);
+
+      expect(await contract.offerFor(1)).to.eql([ price, ethers.constants.AddressZero ])
+    })
+
+    it('Should not allow non-owners to make offers', async () => {
+      await expect(contract.connect(buyer2).makeOffer(1, price))
+        .to.be.revertedWith('Caller is neither owner nor approved')
+    })
+
+    it('Should allow a buyer to purchase an offered item', async () => {
+      await contract.connect(buyer1).makeOffer(1, price)
+
+      await expect(contract.connect(buyer2).buy(1, { value: price }))
+        .to.emit(contract, 'Sale')
+        .withArgs(1, buyer1.address, buyer2.address, price)
+    })
+
+    it('Should not allow a buyer to purchase an item that is not offered', async () => {
+      await expect(contract.connect(buyer2).buy(1, { value: price }))
+        .to.be.revertedWith('Item not for sale')
+
+      await contract.connect(buyer1).makeOffer(1, price)
+      await expect(contract.connect(buyer2).buy(1, { value: price }))
+        .to.emit(contract, 'Sale')
+        .withArgs(1, buyer1.address, buyer2.address, price)
+    })
+  })
 
   describe('Token Holder', () => {
     let tokenId
